@@ -3,19 +3,26 @@ package main
 import (
 	"github.com/gin-gonic/gin"
 	"personal-finance-gin/config"
-	"personal-finance-gin/models"
+	"personal-finance-gin/controllers"
+	"personal-finance-gin/middleware"
 )
 func main(){
 	config.ConnectDB()
 
-	err := config.DB.AutoMigrate(&models.Transaction{})
-	if err != nil {
-		panic(err)
-	}
-
 	r := gin.Default()
+	r.POST("/register", controllers.Register)
+	r.POST("/login",  controllers.Login)
 
-	r.POST("/transactions", controllers.CreateTransaction)
+	authorized := r.Group("/")
+	authorized.Use(middleware.AuthMiddleware())
+{
+	authorized.POST("/transactions", controllers.CreateTransaction)
+	authorized.GET("/transactions", controllers.GetTransaction)
+	authorized.GET("/transactions/:id", controllers.GetTransactionByID)
+	authorized.PUT("/transactions/:id", controllers.Updatetransaction)
+	authorized.DELETE("/transactions/:id", controllers.DeleteTransaction)
+	authorized.GET("/summary", controllers.GetSummary)
+}
 
 	r.GET("/", func(c *gin.Context){
 		c.JSON(200, gin.H{

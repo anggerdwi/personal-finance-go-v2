@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"personal-finance-gin/models"
+
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
@@ -19,4 +21,9 @@ func ConnectDB(){
 	fmt.Println("database connected succesfully!")
 
 	DB = database
+
+	DB.AutoMigrate(&models.User{})
+	DB.AutoMigrate(&models.Transaction{})
+
+	fmt.Println("database connected successfully!")
 }

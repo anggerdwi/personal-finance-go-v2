@@ -6,7 +6,7 @@ import(
 
 type Transaction struct{
 	gorm.Model
-	Type string
-	Amount float64
-	Notes string
+	Type string `json:"type" binding:"required,oneof=income expense"`
+	Amount float64 `json:"amount" binding:"required,gt=0"`
+	Notes string `json:"notes" binding:"max=255"`
 }
