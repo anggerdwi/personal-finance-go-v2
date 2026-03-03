@@ -13,16 +13,31 @@ func CreateTransaction(c *gin.Context){
 
 	var input models.Transaction
 
+	UserID, exists := c.Get("user_id")
+	if !exists{
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error" : "unauthorized!",
+		})
+		return
+	}
+
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error" : err.Error(),
 		})
 		return
 	}
+	input.UserID = UserID.(uint)
+
 	if input.Type == "expense"{
 		input.Amount = -input.Amount
 	}
-	config.DB.Create(&input)
+	if err := config.DB.Create(&input).Error; err != nil{
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error" : err.Error(),
+		})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message" : "transaction created succesfully!",
@@ -32,6 +47,14 @@ func CreateTransaction(c *gin.Context){
 
 func GetTransaction(c *gin.Context){
 	var transactions []models.Transaction
+
+	UserID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error" : "unauthorized!",
+		})
+		return
+	}
 
 	typeFilter := c.Query("type")
 	minAmount := c.Query("min_amount")
@@ -45,23 +68,28 @@ func GetTransaction(c *gin.Context){
 
 	offset := (page - 1) * limit
 
-	query := config.DB.Model(&models.Transaction{})
+	query := config.DB.Model(&models.Transaction{}).
+		Where("user_id = ?", UserID)
 
 	// filter by type
 	if typeFilter != ""{
 		query = query.Where("type = ?", typeFilter)
 	}
 	// filter minimum amount
-	if minAmount != ""{
-		query = query.Where("ABS(amount) >= ?", minAmount)
+	minAmountInt, err := strconv.Atoi(minAmount)
+	if err == nil{
+		query = query.Where("ABS(amount) >= ?", minAmountInt)
 	}
 
-	query.
+	if err := query.
 	Limit(limit).
 	Offset(offset).
-	Find(&transactions)
-
-
+	Find(&transactions).Error; err != nil{
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error" : err.Error(),
+		})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"page" : page,
 		"limit" : limit,
@@ -88,7 +116,16 @@ func Updatetransaction(c *gin.Context){
 
 	var transaction models.Transaction
 
-	if err := config.DB.First(&transaction, id).Error; err != nil{
+	UserID, exists := c.Get("user_id")
+	if !exists{
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error" : "unauthorized!",
+		})
+		return
+	}
+
+	if err := config.DB.Where("id = ? AND user_id = ?", id, UserID).
+		First(&transaction, id).Error; err != nil{
 		c.JSON(http.StatusNotFound, gin.H{
 			"error" : "transaction not found!",
 		})
@@ -119,13 +156,22 @@ func DeleteTransaction(c *gin.Context){
 	id := c.Param("id")
 
 	var transaction models.Transaction
+	
+	UserID, exists := c.Get("user_id")
+	if !exists{
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error" : "unauthorized!",
+		})
+		return
+	}
 
-	if err := config.DB.First(&transaction, id).Error; err != nil{
+	if err := config.DB.Where("id = ? AND user_id = ?", id, UserID).First(&transaction, id).Error; err != nil{
 		c.JSON(http.StatusNotFound, gin.H{
 			"error" : "Transaction not found!",
 		})
 		return
 	}
+
 	if err := config.DB.Delete(&transaction).Error; err != nil{
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error" : "Failed to delete transaction",
@@ -140,18 +186,29 @@ func DeleteTransaction(c *gin.Context){
 func GetSummary(c *gin.Context){
 	var totalIncome float64
 	var totalExpense float64
+	var balance float64
 
+	UserID, exists := c.Get("user_id")
+	if !exists{
+	c.JSON(http.StatusUnauthorized, gin.H{
+		"error" : "unauthorized!",
+	})
+		return
+	}
 	config.DB.Model(&models.Transaction{}).
-	Where("amount > 0").
-	Select("SUM(amount)").
+	Where("user_id = ? AND amount > 0", UserID).
+	Select("COALESCE(SUM(amount),0)").
 	Scan(&totalIncome)
 
 	config.DB.Model(&models.Transaction{}).
-	Where("amount < 0").
-	Select("SUM(amount)").
+	Where("user_id = ? AND amount < 0", UserID).
+	Select("COALESCE(SUM(amount),0)").
 	Scan(&totalExpense)
 
-	balance := totalIncome + totalExpense
+	config.DB.Model(&models.Transaction{}).
+	Where("user_id = ?", UserID).
+	Select("COALESCE(SUM(amount),0)").
+	Scan(&balance)
 
 	c.JSON(http.StatusOK, gin.H{
 		"total_Income": totalIncome,
