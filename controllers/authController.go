@@ -14,6 +14,10 @@ import(
 )
 
 var jwtkey = []byte("secret_key")
+type LoginInput struct {
+    Email    string `json:"email" binding:"required,email"`
+    Password string `json:"password" binding:"required,min=6"`
+}
 
 func Register(c *gin.Context){
 	var input models.User
@@ -51,7 +55,7 @@ if result.Error != nil {
 }
 
 func Login(c *gin.Context){
-	var input models.User
+	var input LoginInput
 	var user models.User
 
 	if err := c.ShouldBindJSON(&input); err != nil{

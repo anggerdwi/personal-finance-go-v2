@@ -9,49 +9,87 @@ import(
 
 )
 
-func CreateTransaction(c *gin.Context){
+func CreateTransaction(c *gin.Context) {
 
 	var input models.Transaction
 
 	UserID, exists := c.Get("user_id")
-	if !exists{
+	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error" : "unauthorized!",
+			"error": "unauthorized!",
 		})
 		return
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error" : err.Error(),
+			"error": err.Error(),
 		})
 		return
 	}
+
+	// Pastikan workspace milik user yang sedang login
+	var workspace models.Workspace
+
+	if err := config.DB.
+		Where("id = ? AND user_id = ?", input.WorkspaceID, UserID).
+		First(&workspace).Error; err != nil {
+
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "workspace not found!",
+		})
+		return
+	}
+
 	input.UserID = UserID.(uint)
 
-	if input.Type == "expense"{
+	if input.Type == "expense" {
 		input.Amount = -input.Amount
 	}
-	if err := config.DB.Create(&input).Error; err != nil{
+
+	if err := config.DB.Create(&input).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error" : err.Error(),
+			"error": err.Error(),
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message" : "transaction created succesfully!",
-		"data" : input,
+		"message": "transaction created successfully!",
+		"data":    input,
 	})
 }
 
-func GetTransaction(c *gin.Context){
+func GetTransaction(c *gin.Context) {
 	var transactions []models.Transaction
 
 	UserID, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error" : "unauthorized!",
+			"error": "unauthorized!",
+		})
+		return
+	}
+
+	// Ambil workspace_id dari query
+	workspaceID := c.Query("workspace_id")
+
+	if workspaceID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "workspace_id is required!",
+		})
+		return
+	}
+
+	// Pastikan workspace milik user yang sedang login
+	var workspace models.Workspace
+
+	if err := config.DB.
+		Where("id = ? AND user_id = ?", workspaceID, UserID).
+		First(&workspace).Error; err != nil {
+
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "workspace not found!",
 		})
 		return
 	}
@@ -59,9 +97,9 @@ func GetTransaction(c *gin.Context){
 	typeFilter := c.Query("type")
 	minAmount := c.Query("min_amount")
 
-	// pagination
+	// Pagination
 	pageStr := c.DefaultQuery("page", "1")
-	limitStr := c.DefaultQuery("limit", "1")
+	limitStr := c.DefaultQuery("limit", "10")
 
 	page, _ := strconv.Atoi(pageStr)
 	limit, _ := strconv.Atoi(limitStr)
@@ -69,72 +107,138 @@ func GetTransaction(c *gin.Context){
 	offset := (page - 1) * limit
 
 	query := config.DB.Model(&models.Transaction{}).
-		Where("user_id = ?", UserID)
+		Where("user_id = ? AND workspace_id = ?", UserID, workspaceID)
 
-	// filter by type
-	if typeFilter != ""{
+	// Filter by type
+	if typeFilter != "" {
 		query = query.Where("type = ?", typeFilter)
 	}
-	// filter minimum amount
+
+	// Filter minimum amount
 	minAmountInt, err := strconv.Atoi(minAmount)
-	if err == nil{
+	if err == nil {
 		query = query.Where("ABS(amount) >= ?", minAmountInt)
 	}
 
 	if err := query.
-	Limit(limit).
-	Offset(offset).
-	Find(&transactions).Error; err != nil{
+		Limit(limit).
+		Offset(offset).
+		Find(&transactions).Error; err != nil {
+
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error" : err.Error(),
+			"error": err.Error(),
 		})
 		return
 	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"page" : page,
-		"limit" : limit,
-		"data" : transactions,
+		"page":  page,
+		"limit": limit,
+		"data":  transactions,
 	})
 }
 
-func GetTransactionByID(c *gin.Context){
+func GetTransactionByID(c *gin.Context) {
 	id := c.Param("id")
-	var transaction models.Transaction
-
-	if err := config.DB.First(&transaction, id).Error; err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"error" : "Transaction not found!",
-	})
-	} 
-	c.JSON(http.StatusOK, gin.H{
-		"data" : transaction,
-	})
-}
-
-func Updatetransaction(c *gin.Context){
-	id := c.Param("id")
-
-	var transaction models.Transaction
+	workspaceID := c.Query("workspace_id")
 
 	UserID, exists := c.Get("user_id")
-	if !exists{
+	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error" : "unauthorized!",
+			"error": "unauthorized!",
 		})
 		return
 	}
 
-	if err := config.DB.Where("id = ? AND user_id = ?", id, UserID).
-		First(&transaction, id).Error; err != nil{
-		c.JSON(http.StatusNotFound, gin.H{
-			"error" : "transaction not found!",
+	if workspaceID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "workspace_id is required!",
 		})
 		return
 	}
-	var input models.Transaction
-	if err := c.ShouldBindJSON(&input); err != nil{
+
+	// Pastikan workspace milik user yang sedang login
+	var workspace models.Workspace
+
+	if err := config.DB.
+		Where("id = ? AND user_id = ?", workspaceID, UserID).
+		First(&workspace).Error; err != nil {
+
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "workspace not found!",
+		})
+		return
+	}
+
+	// Cari transaksi berdasarkan ID, user, dan workspace
+	var transaction models.Transaction
+
+	if err := config.DB.
+		Where("id = ? AND user_id = ? AND workspace_id = ?", id, UserID, workspaceID).
+		First(&transaction).Error; err != nil {
+
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "transaction not found!",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": transaction,
+	})
+}
+
+func Updatetransaction(c *gin.Context) {
+	id := c.Param("id")
+	workspaceID := c.Query("workspace_id")
+
+	UserID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "unauthorized!",
+		})
+		return
+	}
+
+	if workspaceID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error" : err.Error(),
+			"error": "workspace_id is required!",
+		})
+		return
+	}
+
+	// Pastikan workspace milik user yang sedang login
+	var workspace models.Workspace
+
+	if err := config.DB.
+		Where("id = ? AND user_id = ?", workspaceID, UserID).
+		First(&workspace).Error; err != nil {
+
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "workspace not found!",
+		})
+		return
+	}
+
+	// Cari transaksi berdasarkan ID, user, dan workspace
+	var transaction models.Transaction
+
+	if err := config.DB.
+		Where("id = ? AND user_id = ? AND workspace_id = ?", id, UserID, workspaceID).
+		First(&transaction).Error; err != nil {
+
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "transaction not found!",
+		})
+		return
+	}
+
+	// Ambil data baru
+	var input models.Transaction
+
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
 		})
 		return
 	}
@@ -144,76 +248,156 @@ func Updatetransaction(c *gin.Context){
 	transaction.Amount = input.Amount
 	transaction.Notes = input.Notes
 
-	config.DB.Save(&transaction)
-
-	c.JSON(http.StatusOK, gin.H{
-		"message" : "Transaction updated succesfully!",
-		"data" : transaction,
-	})
-}
-
-func DeleteTransaction(c *gin.Context){
-	id := c.Param("id")
-
-	var transaction models.Transaction
-	
-	UserID, exists := c.Get("user_id")
-	if !exists{
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error" : "unauthorized!",
-		})
-		return
+	if transaction.Type == "expense" {
+		transaction.Amount = -transaction.Amount
 	}
 
-	if err := config.DB.Where("id = ? AND user_id = ?", id, UserID).First(&transaction, id).Error; err != nil{
-		c.JSON(http.StatusNotFound, gin.H{
-			"error" : "Transaction not found!",
-		})
-		return
-	}
-
-	if err := config.DB.Delete(&transaction).Error; err != nil{
+	if err := config.DB.Save(&transaction).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error" : "Failed to delete transaction",
+			"error": err.Error(),
 		})
 		return
 	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"message" : "transaction deleted succesfully!",
+		"message": "Transaction updated successfully!",
+		"data":    transaction,
 	})
 }
 
-func GetSummary(c *gin.Context){
+func DeleteTransaction(c *gin.Context) {
+	id := c.Param("id")
+	workspaceID := c.Query("workspace_id")
+
+	UserID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "unauthorized!",
+		})
+		return
+	}
+
+	if workspaceID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "workspace_id is required!",
+		})
+		return
+	}
+
+	// Pastikan workspace milik user yang sedang login
+	var workspace models.Workspace
+
+	if err := config.DB.
+		Where("id = ? AND user_id = ?", workspaceID, UserID).
+		First(&workspace).Error; err != nil {
+
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "workspace not found!",
+		})
+		return
+	}
+
+	// Cari transaksi berdasarkan ID, user, dan workspace
+	var transaction models.Transaction
+
+	if err := config.DB.
+		Where("id = ? AND user_id = ? AND workspace_id = ?", id, UserID, workspaceID).
+		First(&transaction).Error; err != nil {
+
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "transaction not found!",
+		})
+		return
+	}
+
+	// Hapus transaksi
+	if err := config.DB.Delete(&transaction).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to delete transaction",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "transaction deleted successfully!",
+	})
+}
+
+func GetSummary(c *gin.Context) {
 	var totalIncome float64
 	var totalExpense float64
 	var balance float64
 
 	UserID, exists := c.Get("user_id")
-	if !exists{
-	c.JSON(http.StatusUnauthorized, gin.H{
-		"error" : "unauthorized!",
-	})
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "unauthorized!",
+		})
 		return
 	}
-	config.DB.Model(&models.Transaction{}).
-	Where("user_id = ? AND amount > 0", UserID).
-	Select("COALESCE(SUM(amount),0)").
-	Scan(&totalIncome)
 
-	config.DB.Model(&models.Transaction{}).
-	Where("user_id = ? AND amount < 0", UserID).
-	Select("COALESCE(SUM(amount),0)").
-	Scan(&totalExpense)
+	workspaceID := c.Query("workspace_id")
 
-	config.DB.Model(&models.Transaction{}).
-	Where("user_id = ?", UserID).
-	Select("COALESCE(SUM(amount),0)").
-	Scan(&balance)
+	if workspaceID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "workspace_id is required!",
+		})
+		return
+	}
+
+	// Pastikan workspace milik user yang sedang login
+	var workspace models.Workspace
+
+	if err := config.DB.
+		Where("id = ? AND user_id = ?", workspaceID, UserID).
+		First(&workspace).Error; err != nil {
+
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "workspace not found!",
+		})
+		return
+	}
+
+	// Total income
+	if err := config.DB.Model(&models.Transaction{}).
+		Where("user_id = ? AND workspace_id = ? AND amount > 0", UserID, workspaceID).
+		Select("COALESCE(SUM(amount), 0)").
+		Scan(&totalIncome).Error; err != nil {
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Total expense
+	if err := config.DB.Model(&models.Transaction{}).
+		Where("user_id = ? AND workspace_id = ? AND amount < 0", UserID, workspaceID).
+		Select("COALESCE(SUM(amount), 0)").
+		Scan(&totalExpense).Error; err != nil {
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Balance
+	if err := config.DB.Model(&models.Transaction{}).
+		Where("user_id = ? AND workspace_id = ?", UserID, workspaceID).
+		Select("COALESCE(SUM(amount), 0)").
+		Scan(&balance).Error; err != nil {
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"total_Income": totalIncome,
+		"total_Income":  totalIncome,
 		"total_Expense": -totalExpense,
-		"balance": balance,
+		"balance":      balance,
 	})
 }
 	

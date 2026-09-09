@@ -23,6 +23,7 @@ func ConnectDB(){
 	DB = database
 
 	DB.AutoMigrate(&models.User{})
+	DB.AutoMigrate(&models.Workspace{})
 	DB.AutoMigrate(&models.Transaction{})
 
 	fmt.Println("database connected successfully!")

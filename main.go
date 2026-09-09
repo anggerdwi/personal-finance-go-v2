@@ -16,6 +16,8 @@ func main(){
 	authorized := r.Group("/")
 	authorized.Use(middleware.AuthMiddleware())
 {
+	authorized.POST("/workspaces", controllers.CreateWorkspace)
+	authorized.GET("/workspaces", controllers.GetWorkspaces)
 	authorized.POST("/transactions", controllers.CreateTransaction)
 	authorized.GET("/transactions", controllers.GetTransaction)
 	authorized.GET("/transactions/:id", controllers.GetTransactionByID)
