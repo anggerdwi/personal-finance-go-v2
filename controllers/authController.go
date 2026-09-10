@@ -108,7 +108,15 @@ if err != nil {
 		"exp" : time.Now().Add(time.Hour * 24).Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString(jwtkey)
+
+tokenString, err := token.SignedString(config.GetJWTSecret())
+
+if err != nil {
+	c.JSON(http.StatusInternalServerError, gin.H{
+		"error": "failed to create token",
+	})
+	return
+}
 
 if err != nil {
 	c.JSON(http.StatusInternalServerError, gin.H{

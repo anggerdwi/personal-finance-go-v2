@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"personal-finance-gin/config"
 )
 
 func AuthMiddleware() gin.HandlerFunc {
@@ -44,7 +45,7 @@ func AuthMiddleware() gin.HandlerFunc {
 				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 			}
 
-			return []byte("secret_key"), nil
+			return config.GetJWTSecret(), nil
 		})
 
 		if err != nil || !token.Valid {
