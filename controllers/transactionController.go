@@ -550,7 +550,10 @@ func GetSummary(c *gin.Context) {
 		return
 	}
 
-	// Pastikan workspace milik user yang sedang login
+	// =========================================
+	// 1. VALIDASI WORKSPACE
+	// =========================================
+
 	var workspace models.Workspace
 
 	if err := config.DB.
@@ -564,7 +567,7 @@ func GetSummary(c *gin.Context) {
 	}
 
 	// =========================================
-	// 1. TOTAL INCOME
+	// 2. TOTAL INCOME
 	// =========================================
 
 	if err := config.DB.
@@ -585,7 +588,7 @@ func GetSummary(c *gin.Context) {
 	}
 
 	// =========================================
-	// 2. TOTAL EXPENSE
+	// 3. TOTAL EXPENSE
 	// =========================================
 
 	if err := config.DB.
@@ -606,7 +609,7 @@ func GetSummary(c *gin.Context) {
 	}
 
 	// =========================================
-	// 3. TOTAL BALANCE ACCOUNT
+	// 4. TOTAL BALANCE ACCOUNT
 	// =========================================
 
 	if err := config.DB.
@@ -625,9 +628,84 @@ func GetSummary(c *gin.Context) {
 		return
 	}
 
+	// =========================================
+	// 5. ACCOUNT UTAMA
+	// =========================================
+
+	var account models.Account
+
+	if err := config.DB.
+		Where(
+			"user_id = ? AND workspace_id = ?",
+			UserID,
+			workspaceID,
+		).
+		Order("id ASC").
+		First(&account).Error; err != nil {
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// =========================================
+	// 6. TOTAL SAVINGS GOAL
+	// =========================================
+
+	var totalSavingsTarget float64
+	var totalSavingsCurrent float64
+
+	if err := config.DB.
+		Model(&models.SavingsGoal{}).
+		Where(
+			"user_id = ? AND workspace_id = ?",
+			UserID,
+			workspaceID,
+		).
+		Select("COALESCE(SUM(target_amount), 0)").
+		Scan(&totalSavingsTarget).Error; err != nil {
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if err := config.DB.
+		Model(&models.SavingsGoal{}).
+		Where(
+			"user_id = ? AND workspace_id = ?",
+			UserID,
+			workspaceID,
+		).
+		Select("COALESCE(SUM(current_amount), 0)").
+		Scan(&totalSavingsCurrent).Error; err != nil {
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// =========================================
+	// 7. RESPONSE
+	// =========================================
+
 	c.JSON(http.StatusOK, gin.H{
 		"total_Income":  totalIncome,
 		"total_Expense": totalExpense,
 		"balance":       balance,
+
+		"account": gin.H{
+			"id":      account.ID,
+			"name":    account.Name,
+			"balance": account.Balance,
+		},
+
+		"savings": gin.H{
+			"total_target": totalSavingsTarget,
+			"total_saved":  totalSavingsCurrent,
+		},
 	})
 }
