@@ -28,6 +28,7 @@ func ConnectDB(){
 	DB.AutoMigrate(&models.SavingsGoal{})
 	DB.AutoMigrate(&models.SavingsDeposit{})
 	DB.AutoMigrate(&models.Category{})
+	DB.AutoMigrate(&models.Account{})
 
 	fmt.Println("database connected successfully!")
 }

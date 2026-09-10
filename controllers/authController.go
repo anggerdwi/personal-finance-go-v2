@@ -36,8 +36,19 @@ func Register(c *gin.Context){
 		return
 	}
 	// hash password
-	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
-	input.Password = string(hashedPassword)
+	hashedPassword, err := bcrypt.GenerateFromPassword(
+	[]byte(input.Password),
+	bcrypt.DefaultCost,
+)
+
+if err != nil {
+	c.JSON(http.StatusInternalServerError, gin.H{
+		"error": "failed to hash password",
+	})
+	return
+}
+
+input.Password = string(hashedPassword)
 
 	result := config.DB.Create(&input)
 
@@ -64,9 +75,27 @@ func Login(c *gin.Context){
 		})
 		return
 		}
-		config.DB.Where("email = ?", input.Email).First(&user)
-		// compare password
-		err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password))
+		result := config.DB.Where("email = ?", input.Email).First(&user)
+
+if result.Error != nil {
+	c.JSON(http.StatusUnauthorized, gin.H{
+		"error": "invalid credentials!",
+	})
+	return
+}
+
+// compare password
+err := bcrypt.CompareHashAndPassword(
+	[]byte(user.Password),
+	[]byte(input.Password),
+)
+
+if err != nil {
+	c.JSON(http.StatusUnauthorized, gin.H{
+		"error": "invalid credentials!",
+	})
+	return
+}
 		if err != nil{
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error" : "invalid credentials!",
@@ -79,7 +108,14 @@ func Login(c *gin.Context){
 		"exp" : time.Now().Add(time.Hour * 24).Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, _ := token.SignedString(jwtkey)
+	tokenString, err := token.SignedString(jwtkey)
+
+if err != nil {
+	c.JSON(http.StatusInternalServerError, gin.H{
+		"error": "failed to create token",
+	})
+	return
+}
 
 	c.JSON(http. StatusOK, gin.H{
 		"token" : tokenString,
