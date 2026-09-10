@@ -41,6 +41,34 @@ func CreateTransaction(c *gin.Context) {
 		return
 	}
 
+	if err := config.DB.
+	Where("id = ? AND user_id = ?", input.WorkspaceID, UserID).
+	First(&workspace).Error; err != nil {
+
+	c.JSON(http.StatusNotFound, gin.H{
+		"error": "workspace not found!",
+	})
+	return
+}
+
+// Pastikan category milik user dan workspace yang sama
+var category models.Category
+
+if err := config.DB.
+	Where(
+		"id = ? AND user_id = ? AND workspace_id = ?",
+		input.CategoryID,
+		UserID,
+		input.WorkspaceID,
+	).
+	First(&category).Error; err != nil {
+
+	c.JSON(http.StatusNotFound, gin.H{
+		"error": "category not found!",
+	})
+	return
+}
+
 	input.UserID = UserID.(uint)
 
 	if input.Type == "expense" {
@@ -121,6 +149,7 @@ func GetTransaction(c *gin.Context) {
 	}
 
 	if err := query.
+		Preload("Category").
 		Limit(limit).
 		Offset(offset).
 		Find(&transactions).Error; err != nil {
@@ -174,6 +203,7 @@ func GetTransactionByID(c *gin.Context) {
 	var transaction models.Transaction
 
 	if err := config.DB.
+		Preload("Category").
 		Where("id = ? AND user_id = ? AND workspace_id = ?", id, UserID, workspaceID).
 		First(&transaction).Error; err != nil {
 
@@ -244,6 +274,26 @@ func Updatetransaction(c *gin.Context) {
 	}
 
 	// UPDATE
+// Pastikan category milik user dan workspace yang sama
+var category models.Category
+
+if err := config.DB.
+	Where(
+		"id = ? AND user_id = ? AND workspace_id = ?",
+		input.CategoryID,
+		UserID,
+		workspaceID,
+	).
+	First(&category).Error; err != nil {
+
+	c.JSON(http.StatusNotFound, gin.H{
+		"error": "category not found!",
+	})
+	return
+}
+
+// UPDATE
+	transaction.CategoryID = input.CategoryID
 	transaction.Type = input.Type
 	transaction.Amount = input.Amount
 	transaction.Notes = input.Notes
