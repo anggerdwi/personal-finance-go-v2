@@ -8,6 +8,14 @@ import (
 	"personal-finance-gin/models"
 	"strconv"
 )
+type DashboardTransactionResponse struct {
+	ID       uint    `json:"id"`
+	Type     string  `json:"type"`
+	Amount   float64 `json:"amount"`
+	Category string  `json:"category"`
+	Account  *string `json:"account"`
+	Notes    string  `json:"notes"`
+}
 
 func CreateTransaction(c *gin.Context) {
 
@@ -707,5 +715,237 @@ func GetSummary(c *gin.Context) {
 			"total_target": totalSavingsTarget,
 			"total_saved":  totalSavingsCurrent,
 		},
+	})
+}
+
+func GetDashboard(c *gin.Context) {
+	var totalIncome float64
+	var totalExpense float64
+	var balance float64
+
+	UserID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "unauthorized!",
+		})
+		return
+	}
+
+	workspaceID := c.Query("workspace_id")
+
+	if workspaceID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "workspace_id is required!",
+		})
+		return
+	}
+
+	// =========================================
+	// 1. VALIDASI WORKSPACE
+	// =========================================
+
+	var workspace models.Workspace
+
+	if err := config.DB.
+		Where("id = ? AND user_id = ?", workspaceID, UserID).
+		First(&workspace).Error; err != nil {
+
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "workspace not found!",
+		})
+		return
+	}
+
+	// =========================================
+	// 2. TOTAL INCOME
+	// =========================================
+
+	if err := config.DB.
+		Model(&models.Transaction{}).
+		Where(
+			"user_id = ? AND workspace_id = ? AND type = ?",
+			UserID,
+			workspaceID,
+			"income",
+		).
+		Select("COALESCE(SUM(ABS(amount)), 0)").
+		Scan(&totalIncome).Error; err != nil {
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// =========================================
+	// 3. TOTAL EXPENSE
+	// =========================================
+
+	if err := config.DB.
+		Model(&models.Transaction{}).
+		Where(
+			"user_id = ? AND workspace_id = ? AND type = ?",
+			UserID,
+			workspaceID,
+			"expense",
+		).
+		Select("COALESCE(SUM(ABS(amount)), 0)").
+		Scan(&totalExpense).Error; err != nil {
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// =========================================
+	// 4. TOTAL BALANCE
+	// =========================================
+
+	if err := config.DB.
+		Model(&models.Account{}).
+		Where(
+			"user_id = ? AND workspace_id = ?",
+			UserID,
+			workspaceID,
+		).
+		Select("COALESCE(SUM(balance), 0)").
+		Scan(&balance).Error; err != nil {
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// =========================================
+	// 5. ACCOUNT UTAMA
+	// =========================================
+
+	var account models.Account
+
+	if err := config.DB.
+		Where(
+			"user_id = ? AND workspace_id = ?",
+			UserID,
+			workspaceID,
+		).
+		Order("id ASC").
+		First(&account).Error; err != nil {
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// =========================================
+	// 6. SAVINGS
+	// =========================================
+
+	var totalSavingsTarget float64
+	var totalSavingsCurrent float64
+
+	if err := config.DB.
+		Model(&models.SavingsGoal{}).
+		Where(
+			"user_id = ? AND workspace_id = ?",
+			UserID,
+			workspaceID,
+		).
+		Select("COALESCE(SUM(target_amount), 0)").
+		Scan(&totalSavingsTarget).Error; err != nil {
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if err := config.DB.
+		Model(&models.SavingsGoal{}).
+		Where(
+			"user_id = ? AND workspace_id = ?",
+			UserID,
+			workspaceID,
+		).
+		Select("COALESCE(SUM(current_amount), 0)").
+		Scan(&totalSavingsCurrent).Error; err != nil {
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// =========================================
+	// 7. TRANSAKSI TERBARU
+	// =========================================
+
+	var transactions []models.Transaction
+
+	if err := config.DB.
+	Where(
+		"user_id = ? AND workspace_id = ?",
+		UserID,
+		workspaceID,
+	).
+	Preload("Category").
+	Preload("Account").
+	Order("id DESC").
+	Limit(5).
+	Find(&transactions).Error; err != nil {
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+	recentTransactions := make([]DashboardTransactionResponse, 0, len(transactions))
+
+for _, transaction := range transactions {
+
+    var accountName *string
+
+    if transaction.AccountID != 0 {
+        accountName = &transaction.Account.Name
+    }
+
+    recentTransactions = append(
+        recentTransactions,
+        DashboardTransactionResponse{
+            ID:       transaction.ID,
+            Type:     transaction.Type,
+            Amount:   transaction.Amount,
+            Category: transaction.Category.Name,
+            Account:  accountName,
+            Notes:    transaction.Notes,
+        },
+    )
+}
+
+	// =========================================
+	// 8. RESPONSE
+	// =========================================
+
+	c.JSON(http.StatusOK, gin.H{
+		"summary": gin.H{
+			"balance":       balance,
+			"total_income":  totalIncome,
+			"total_expense": totalExpense,
+		},
+
+		"account": gin.H{
+			"id":      account.ID,
+			"name":    account.Name,
+			"balance": account.Balance,
+		},
+
+		"savings": gin.H{
+			"total_target": totalSavingsTarget,
+			"total_saved":   totalSavingsCurrent,
+		},
+
+		"recent_transactions": recentTransactions,
 	})
 }

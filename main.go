@@ -44,6 +44,7 @@ func main(){
 	authorized.PUT("/transactions/:id", controllers.Updatetransaction)
 	authorized.DELETE("/transactions/:id", controllers.DeleteTransaction)
 	authorized.GET("/summary", controllers.GetSummary)
+	authorized.GET("/dashboard", controllers.GetDashboard)
 }
 
 	r.GET("/", func(c *gin.Context){
