@@ -5,13 +5,19 @@ import (
 	"personal-finance-gin/config"
 	"personal-finance-gin/controllers"
 	"personal-finance-gin/middleware"
+	"github.com/gin-contrib/cors"
 )
 func main(){
 	config.ConnectDB()
 
 	r := gin.Default()
-	r.POST("/register", controllers.Register)
-	r.POST("/login",  controllers.Login)
+	r.Use(cors.New(cors.Config{
+    AllowOrigins:     []string{"http://localhost:5173"},
+    AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+    AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+    AllowCredentials: true,
+}))
+	r.POST("/login", controllers.Login)
 
 	authorized := r.Group("/")
 	authorized.Use(middleware.AuthMiddleware())
