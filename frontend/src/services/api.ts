@@ -512,3 +512,65 @@ export async function createSavingsDeposit(
 
   return data
 }
+
+export async function updateSavingsDeposit(
+  goalId: number,
+  depositId: number,
+  accountId: number,
+  amount: number,
+  notes: string
+) {
+  const token = localStorage.getItem("token")
+
+  const response = await fetch(
+    `${API_URL}/savings-goals/${goalId}/deposits/${depositId}`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        account_id: accountId,
+        amount: amount,
+        notes: notes,
+      }),
+    }
+  )
+
+  const data = await response.json()
+
+  if (!response.ok) {
+    throw new Error(
+      data.error ||
+        "Gagal mengubah dana tabungan"
+    )
+  }
+
+  return data
+}
+
+export async function deleteSavingsDeposit(
+  goalId: number,
+  depositId: number
+) {
+  const token = localStorage.getItem("token")
+
+  const response = await fetch(
+    `${API_URL}/savings-goals/${goalId}/deposits/${depositId}`,
+    {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  )
+
+  const data = await response.json()
+
+  if (!response.ok) {
+    throw new Error(data.error || "Gagal menghapus dana tabungan")
+  }
+
+  return data
+}

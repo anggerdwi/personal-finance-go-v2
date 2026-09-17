@@ -2,18 +2,12 @@ import { useEffect, useState } from "react"
 import {
   getSavingsGoals,
   createSavingsGoal,
+  getSavingsDeposits,
   createSavingsDeposit,
+  updateSavingsDeposit,
+  deleteSavingsDeposit,
   getAccounts,
 } from "../services/api"
-
-type SavingsGoalProps = {
-  workspace: {
-    id: number
-    name: string
-    description: string
-  }
-  onBack: () => void
-}
 
 type SavingsGoal = {
   id: number
@@ -31,33 +25,71 @@ type Account = {
   balance: number
 }
 
-function SavingsGoal({
+type Deposit = {
+  id: number
+  account_id: number
+  amount: number
+  notes: string
+  created_at: string
+}
+
+type Props = {
+  workspace: {
+    id: number
+    name: string
+  }
+  onBack: () => void
+}
+
+const formatRupiah = (amount: number) =>
+  new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    maximumFractionDigits: 0,
+  }).format(amount)
+
+const formatDate = (date: string) => {
+  if (!date) return "-"
+
+  return new Date(date).toLocaleDateString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })
+}
+
+export default function SavingsGoal({
   workspace,
   onBack,
-}: SavingsGoalProps) {
+}: Props) {
   const [goals, setGoals] = useState<SavingsGoal[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
+  const [deposits, setDeposits] = useState<
+    Record<number, Deposit[]>
+  >({})
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
 
   // =========================
-  // CREATE GOAL FORM
+  // MODAL
   // =========================
+  const [modal, setModal] = useState<
+    "goal" | "deposit" | "editDeposit" | null
+  >(null)
 
-  const [showForm, setShowForm] = useState(false)
-
+  // =========================
+  // GOAL FORM
+  // =========================
   const [name, setName] = useState("")
   const [targetAmount, setTargetAmount] = useState("")
   const [deadline, setDeadline] = useState("")
   const [frequency, setFrequency] = useState("monthly")
-
   const [saving, setSaving] = useState(false)
 
   // =========================
   // DEPOSIT FORM
   // =========================
-
   const [depositGoalId, setDepositGoalId] =
     useState<number | null>(null)
 
@@ -74,164 +106,128 @@ function SavingsGoal({
     useState(false)
 
   // =========================
-  // FORMAT RUPIAH
+  // EDIT DEPOSIT
   // =========================
+  const [editingDepositId, setEditingDepositId] =
+    useState<number | null>(null)
 
-  const formatRupiah = (amount: number) => {
-    return new Intl.NumberFormat("id-ID", {
-      style: "currency",
-      currency: "IDR",
-      maximumFractionDigits: 0,
-    }).format(amount)
-  }
+  const [editDepositGoalId, setEditDepositGoalId] =
+    useState<number | null>(null)
 
-  // =========================
-  // FORMAT DEADLINE
-  // =========================
+  const [editDepositAccountId, setEditDepositAccountId] =
+    useState("")
 
-  const formatDeadline = (deadline: string) => {
-    if (!deadline) {
-      return "-"
-    }
+  const [editDepositAmount, setEditDepositAmount] =
+    useState("")
 
-    const date = new Date(deadline)
+  const [editDepositNotes, setEditDepositNotes] =
+    useState("")
 
-    if (isNaN(date.getTime())) {
-      return deadline
-    }
-
-    return new Intl.DateTimeFormat("id-ID", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    }).format(date)
-  }
+  const [editDepositSaving, setEditDepositSaving] =
+    useState(false)
 
   // =========================
-  // FORMAT FREQUENCY
+  // LOAD
   // =========================
-
-  const formatFrequency = (frequency: string) => {
-    switch (frequency) {
-      case "daily":
-        return "Harian"
-
-      case "weekly":
-        return "Mingguan"
-
-      case "monthly":
-        return "Bulanan"
-
-      default:
-        return frequency
-    }
-  }
-
-  // =========================
-  // LOAD GOALS
-  // =========================
-
   const loadGoals = async () => {
+    const data = await getSavingsGoals(workspace.id)
+    const list = data.data || []
+
+    setGoals(list)
+
+    return list
+  }
+
+  const loadAccounts = async () => {
+    const data = await getAccounts(workspace.id)
+    setAccounts(data)
+  }
+
+  const loadDeposits = async (goalList: SavingsGoal[]) => {
+    const result: Record<number, Deposit[]> = {}
+
+    await Promise.all(
+      goalList.map(async (goal) => {
+        try {
+          const data = await getSavingsDeposits(goal.id)
+          result[goal.id] = data.data || []
+        } catch {
+          result[goal.id] = []
+        }
+      })
+    )
+
+    setDeposits(result)
+  }
+
+  const loadData = async () => {
     try {
       setLoading(true)
       setError("")
 
-      const data = await getSavingsGoals(
-        workspace.id
-      )
+      const goalList = await loadGoals()
 
-      setGoals(data.data || [])
-    } catch (error) {
-      if (error instanceof Error) {
-        setError(error.message)
-      } else {
-        setError(
-          "Gagal mengambil savings goal"
-        )
-      }
+      await Promise.all([
+        loadAccounts(),
+        loadDeposits(goalList),
+      ])
+    } catch (err: any) {
+      setError(
+        err.message || "Gagal memuat data tabungan"
+      )
     } finally {
       setLoading(false)
     }
   }
 
-  // =========================
-  // LOAD ACCOUNTS
-  // =========================
-
-  const loadAccounts = async () => {
-    try {
-      const data = await getAccounts(
-        workspace.id
-      )
-
-      console.log(
-        "ACCOUNTS DARI BACKEND:",
-        data
-      )
-
-      setAccounts(data)
-    } catch (error) {
-      if (error instanceof Error) {
-        setError(error.message)
-      } else {
-        setError(
-          "Gagal mengambil rekening"
-        )
-      }
-    }
-  }
+  useEffect(() => {
+    loadData()
+  }, [workspace.id])
 
   // =========================
-  // LOAD DATA
+  // CLOSE MODAL
   // =========================
+  const closeModal = () => {
+    setModal(null)
 
-  const loadData = async () => {
-    await Promise.all([
-      loadGoals(),
-      loadAccounts(),
-    ])
+    setName("")
+    setTargetAmount("")
+    setDeadline("")
+    setFrequency("monthly")
+
+    setDepositGoalId(null)
+    setDepositAccountId("")
+    setDepositAmount("")
+    setDepositNotes("")
+
+    setEditingDepositId(null)
+    setEditDepositGoalId(null)
+    setEditDepositAccountId("")
+    setEditDepositAmount("")
+    setEditDepositNotes("")
+
+    setError("")
   }
 
   // =========================
   // CREATE GOAL
   // =========================
-
-  const handleCreateGoal = async (
-    event: React.FormEvent
-  ) => {
-    event.preventDefault()
-
-    setError("")
-
-    if (!name.trim()) {
-      setError(
-        "Nama target wajib diisi."
-      )
-      return
-    }
-
+  const handleCreateGoal = async () => {
     const amount = Number(targetAmount)
 
-    if (
-      !targetAmount ||
-      isNaN(amount) ||
-      amount <= 0
-    ) {
-      setError(
-        "Target nominal harus lebih dari 0."
-      )
+    if (!name.trim()) {
+      setError("Nama target wajib diisi")
       return
     }
 
-    if (!deadline) {
-      setError(
-        "Deadline wajib diisi."
-      )
+    if (!amount || amount <= 0) {
+      setError("Target nominal harus lebih dari 0")
       return
     }
 
     try {
       setSaving(true)
+      setError("")
 
       await createSavingsGoal(
         workspace.id,
@@ -241,34 +237,21 @@ function SavingsGoal({
         frequency
       )
 
-      setName("")
-      setTargetAmount("")
-      setDeadline("")
-      setFrequency("monthly")
-
-      setShowForm(false)
-
-      await loadGoals()
-    } catch (error) {
-      if (error instanceof Error) {
-        setError(error.message)
-      } else {
-        setError(
-          "Gagal membuat savings goal."
-        )
-      }
+      closeModal()
+      await loadData()
+    } catch (err: any) {
+      setError(
+        err.message || "Gagal membuat target tabungan"
+      )
     } finally {
       setSaving(false)
     }
   }
 
   // =========================
-  // OPEN DEPOSIT FORM
+  // OPEN DEPOSIT
   // =========================
-
-  const openDepositForm = (
-    goalId: number
-  ) => {
+  const openDepositForm = (goalId: number) => {
     setError("")
 
     setDepositGoalId(goalId)
@@ -281,659 +264,1083 @@ function SavingsGoal({
 
     setDepositAmount("")
     setDepositNotes("")
-  }
 
-  // =========================
-  // CLOSE DEPOSIT FORM
-  // =========================
-
-  const closeDepositForm = () => {
-    setDepositGoalId(null)
-    setDepositAccountId("")
-    setDepositAmount("")
-    setDepositNotes("")
+    setModal("deposit")
   }
 
   // =========================
   // CREATE DEPOSIT
   // =========================
-
-  const handleCreateDeposit = async (
-    event: React.FormEvent
-  ) => {
-    event.preventDefault()
-
-    setError("")
-
+  const handleCreateDeposit = async () => {
     if (!depositGoalId) {
-      setError(
-        "Target tabungan belum dipilih."
-      )
+      setError("Target tidak ditemukan")
       return
     }
 
-    if (!depositAccountId) {
-      setError(
-        "Pilih rekening terlebih dahulu."
-      )
-      return
-    }
-
+    const accountId = Number(depositAccountId)
     const amount = Number(depositAmount)
 
-    if (
-      !depositAmount ||
-      isNaN(amount) ||
-      amount <= 0
-    ) {
-      setError(
-        "Nominal dana harus lebih dari 0."
-      )
+    if (!accountId) {
+      setError("Pilih akun sumber dana")
       return
     }
 
-    const selectedAccount =
-      accounts.find(
-        (account) =>
-          account.id ===
-          Number(depositAccountId)
-      )
+    if (!amount || amount <= 0) {
+      setError("Nominal harus lebih dari 0")
+      return
+    }
 
-    if (
-      selectedAccount &&
-      amount > selectedAccount.balance
-    ) {
+    const account = accounts.find(
+      (item) => item.id === accountId
+    )
+
+    if (!account) {
+      setError("Akun tidak ditemukan")
+      return
+    }
+
+    if (amount > account.balance) {
       setError(
-        "Saldo rekening tidak mencukupi."
+        `Saldo ${account.name} tidak mencukupi`
       )
       return
     }
 
     try {
       setDepositSaving(true)
+      setError("")
 
       await createSavingsDeposit(
         depositGoalId,
-        Number(depositAccountId),
+        accountId,
         amount,
-        depositNotes.trim()
+        depositNotes
       )
 
-      closeDepositForm()
-
+      closeModal()
       await loadData()
-    } catch (error) {
-      if (error instanceof Error) {
-        setError(error.message)
-      } else {
-        setError(
-          "Gagal menambahkan dana."
-        )
-      }
+    } catch (err: any) {
+      setError(
+        err.message || "Gagal menambahkan dana"
+      )
     } finally {
       setDepositSaving(false)
     }
   }
 
   // =========================
-  // LOAD INITIAL DATA
+  // OPEN EDIT
   // =========================
+  const openEditDepositForm = (
+    goalId: number,
+    deposit: Deposit
+  ) => {
+    setError("")
 
-  useEffect(() => {
-    loadData()
-  }, [workspace.id])
+    setEditingDepositId(deposit.id)
+    setEditDepositGoalId(goalId)
+
+    setEditDepositAccountId(
+      String(deposit.account_id)
+    )
+
+    setEditDepositAmount(
+      String(deposit.amount)
+    )
+
+    setEditDepositNotes(
+      deposit.notes || ""
+    )
+
+    setModal("editDeposit")
+  }
+
+  // =========================
+  // UPDATE DEPOSIT
+  // =========================
+  const handleUpdateDeposit = async () => {
+    if (
+      !editingDepositId ||
+      !editDepositGoalId
+    ) {
+      return
+    }
+
+    const accountId = Number(
+      editDepositAccountId
+    )
+
+    const amount = Number(
+      editDepositAmount
+    )
+
+    if (!accountId) {
+      setError("Pilih akun sumber dana")
+      return
+    }
+
+    if (!amount || amount <= 0) {
+      setError("Nominal harus lebih dari 0")
+      return
+    }
+
+    try {
+      setEditDepositSaving(true)
+      setError("")
+
+      await updateSavingsDeposit(
+        editDepositGoalId,
+        editingDepositId,
+        accountId,
+        amount,
+        editDepositNotes
+      )
+
+      closeModal()
+      await loadData()
+    } catch (err: any) {
+      setError(
+        err.message ||
+          "Gagal mengubah dana tabungan"
+      )
+    } finally {
+      setEditDepositSaving(false)
+    }
+  }
+
+  // =========================
+  // DELETE
+  // =========================
+  const handleDeleteDeposit = async (
+    goalId: number,
+    depositId: number
+  ) => {
+    const confirmed = window.confirm(
+      "Hapus dana tabungan ini?"
+    )
+
+    if (!confirmed) return
+
+    try {
+      setError("")
+
+      await deleteSavingsDeposit(
+        goalId,
+        depositId
+      )
+
+      await loadData()
+    } catch (err: any) {
+      setError(
+        err.message ||
+          "Gagal menghapus dana tabungan"
+      )
+    }
+  }
+
+  // =========================
+  // LOADING
+  // =========================
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="mx-auto max-w-6xl">
+          <div className="animate-pulse space-y-6">
+            <div className="h-8 w-56 rounded-lg bg-gray-200" />
+            <div className="h-36 rounded-2xl bg-gray-200" />
+            <div className="h-64 rounded-2xl bg-gray-200" />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // =========================
+  // TOTAL
+  // =========================
+  const totalSaved = goals.reduce(
+    (sum, goal) =>
+      sum + Number(goal.current_amount || 0),
+    0
+  )
+
+  const totalTarget = goals.reduce(
+    (sum, goal) =>
+      sum + Number(goal.target_amount || 0),
+    0
+  )
+
+  const overallProgress =
+    totalTarget > 0
+      ? Math.min(
+          (totalSaved / totalTarget) * 100,
+          100
+        )
+      : 0
 
   return (
-    <div className="min-h-screen bg-gray-100 px-4 py-10">
-      <div className="mx-auto max-w-6xl">
+    <div className="min-h-screen bg-gray-50">
 
-        {/* =========================
-            HEADER
-        ========================= */}
+      {/* =========================
+          TOP BAR
+      ========================= */}
+      <header className="border-b border-gray-200 bg-white">
 
-        <div className="mb-8">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
 
-          <button
-            onClick={onBack}
-            className="mb-4 text-sm font-medium text-blue-600 hover:text-blue-700"
-          >
-            ← Kembali ke Dashboard
-          </button>
-
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-
-            <div>
-
-              <p className="text-sm text-gray-500">
-                Workspace aktif
-              </p>
-
-              <h1 className="mt-1 text-3xl font-bold text-gray-900">
-                Target Tabungan
-              </h1>
-
-              <p className="mt-2 text-gray-500">
-                {workspace.name}
-              </p>
-
-            </div>
+          <div className="flex items-center gap-4">
 
             <button
-              onClick={() => {
-                setError("")
-                setShowForm(!showForm)
-              }}
-              className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+              onClick={onBack}
+              className="flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 text-gray-600 transition hover:bg-gray-50 hover:text-black"
             >
-              {showForm
-                ? "Tutup Form"
-                : "+ Tambah Target"}
+              ←
             </button>
+
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-gray-400">
+                Workspace
+              </p>
+
+              <h1 className="text-xl font-bold text-gray-900">
+                {workspace.name}
+              </h1>
+            </div>
+
+          </div>
+
+          <button
+            onClick={() => {
+              setError("")
+              setModal("goal")
+            }}
+            className="rounded-xl bg-black px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-gray-800"
+          >
+            + Target Baru
+          </button>
+
+        </div>
+
+      </header>
+
+      {/* =========================
+          MAIN
+      ========================= */}
+      <main className="mx-auto max-w-6xl space-y-6 px-6 py-8">
+
+        {error && (
+          <div className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{error}</span>
+
+            <button
+              onClick={() => setError("")}
+              className="font-semibold"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
+        {/* =========================
+            PAGE TITLE
+        ========================= */}
+        <div>
+          <p className="text-sm font-medium text-gray-500">
+            Financial Planning
+          </p>
+
+          <h2 className="mt-1 text-3xl font-bold tracking-tight text-gray-900">
+            Target Tabungan
+          </h2>
+
+          <p className="mt-1 text-sm text-gray-500">
+            Pantau perkembangan tabungan dan
+            capai target finansialmu.
+          </p>
+        </div>
+
+        {/* =========================
+            SUMMARY
+        ========================= */}
+        <div className="grid gap-4 md:grid-cols-3">
+
+          <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+
+            <p className="text-sm text-gray-500">
+              Total Terkumpul
+            </p>
+
+            <p className="mt-2 text-2xl font-bold text-gray-900">
+              {formatRupiah(totalSaved)}
+            </p>
+
+            <p className="mt-2 text-xs text-gray-400">
+              Dari seluruh target
+            </p>
+
+          </div>
+
+          <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+
+            <p className="text-sm text-gray-500">
+              Total Target
+            </p>
+
+            <p className="mt-2 text-2xl font-bold text-gray-900">
+              {formatRupiah(totalTarget)}
+            </p>
+
+            <p className="mt-2 text-xs text-gray-400">
+              Target keseluruhan
+            </p>
+
+          </div>
+
+          <div className="rounded-2xl border border-gray-200 bg-black p-5 text-white shadow-sm">
+
+            <p className="text-sm text-gray-400">
+              Progress Keseluruhan
+            </p>
+
+            <p className="mt-2 text-2xl font-bold">
+              {overallProgress.toFixed(1)}%
+            </p>
+
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/20">
+
+              <div
+                className="h-full rounded-full bg-white transition-all"
+                style={{
+                  width: `${overallProgress}%`,
+                }}
+              />
+
+            </div>
 
           </div>
 
         </div>
 
         {/* =========================
-            ERROR
-        ========================= */}
-
-        {error && (
-          <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-5 py-4">
-
-            <p className="text-sm text-red-600">
-              {error}
-            </p>
-
-          </div>
-        )}
-
-        {/* =========================
-            FORM TARGET
-        ========================= */}
-
-        {showForm && (
-          <div className="mb-8 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-
-            <h2 className="text-xl font-semibold text-gray-900">
-              Tambah Target Tabungan
-            </h2>
-
-            <p className="mt-1 text-sm text-gray-500">
-              Buat target tabungan baru.
-            </p>
-
-            <form
-              onSubmit={handleCreateGoal}
-              className="mt-6 space-y-5"
-            >
-
-              <div>
-
-                <label className="mb-2 block text-sm font-medium text-gray-700">
-                  Nama Target
-                </label>
-
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(event) =>
-                    setName(
-                      event.target.value
-                    )
-                  }
-                  placeholder="Contoh: Beli Laptop"
-                  className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
-                />
-
-              </div>
-
-              <div>
-
-                <label className="mb-2 block text-sm font-medium text-gray-700">
-                  Target Nominal
-                </label>
-
-                <input
-                  type="number"
-                  min="1"
-                  value={targetAmount}
-                  onChange={(event) =>
-                    setTargetAmount(
-                      event.target.value
-                    )
-                  }
-                  placeholder="12000000"
-                  className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
-                />
-
-              </div>
-
-              <div>
-
-                <label className="mb-2 block text-sm font-medium text-gray-700">
-                  Deadline
-                </label>
-
-                <input
-                  type="date"
-                  value={deadline}
-                  onChange={(event) =>
-                    setDeadline(
-                      event.target.value
-                    )
-                  }
-                  className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-blue-500"
-                />
-
-              </div>
-
-              <div>
-
-                <label className="mb-2 block text-sm font-medium text-gray-700">
-                  Frekuensi
-                </label>
-
-                <select
-                  value={frequency}
-                  onChange={(event) =>
-                    setFrequency(
-                      event.target.value
-                    )
-                  }
-                  className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
-                >
-
-                  <option value="daily">
-                    Harian
-                  </option>
-
-                  <option value="weekly">
-                    Mingguan
-                  </option>
-
-                  <option value="monthly">
-                    Bulanan
-                  </option>
-
-                </select>
-
-              </div>
-
-              <div className="flex justify-end gap-3">
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setShowForm(false)
-                  }
-                  className="rounded-xl border border-gray-300 px-5 py-3 text-sm font-medium text-gray-700"
-                >
-                  Batal
-                </button>
-
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
-                >
-                  {saving
-                    ? "Menyimpan..."
-                    : "Simpan Target"}
-                </button>
-
-              </div>
-
-            </form>
-
-          </div>
-        )}
-
-        {/* =========================
-            LOADING
-        ========================= */}
-
-        {loading && (
-          <div className="rounded-2xl border border-gray-200 bg-white px-6 py-10 text-center shadow-sm">
-
-            <p className="text-sm text-gray-500">
-              Memuat data...
-            </p>
-
-          </div>
-        )}
-
-        {/* =========================
-            EMPTY
-        ========================= */}
-
-        {!loading &&
-          !error &&
-          goals.length === 0 && (
-            <div className="rounded-2xl border border-gray-200 bg-white px-6 py-12 text-center shadow-sm">
-
-              <h2 className="text-lg font-semibold text-gray-900">
-                Belum ada target tabungan
-              </h2>
-
-              <p className="mt-2 text-sm text-gray-500">
-                Buat target tabungan pertama kamu.
-              </p>
-
-            </div>
-          )}
-
-        {/* =========================
             GOALS
         ========================= */}
+        {goals.length === 0 ? (
 
-        {!loading &&
-          !error &&
-          goals.length > 0 && (
-            <div className="grid gap-5 md:grid-cols-2">
+          <div className="rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-16 text-center">
 
-              {goals.map((goal) => (
-                <div
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 text-2xl">
+              $
+            </div>
+
+            <h3 className="mt-4 text-lg font-semibold text-gray-900">
+              Belum ada target
+            </h3>
+
+            <p className="mx-auto mt-1 max-w-md text-sm text-gray-500">
+              Buat target tabungan pertama untuk
+              mulai mengatur tujuan finansialmu.
+            </p>
+
+            <button
+              onClick={() => setModal("goal")}
+              className="mt-5 rounded-xl bg-black px-5 py-2.5 text-sm font-semibold text-white"
+            >
+              Buat Target
+            </button>
+
+          </div>
+
+        ) : (
+
+          <div className="space-y-5">
+
+            {goals.map((goal) => {
+
+              const goalDeposits =
+                deposits[goal.id] || []
+
+              const remaining = Math.max(
+                Number(goal.target_amount) -
+                  Number(goal.current_amount),
+                0
+              )
+
+              return (
+                <section
                   key={goal.id}
-                  className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm"
+                  className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"
                 >
 
-                  {/* NAME */}
-
-                  <div className="flex items-start justify-between gap-4">
+                  {/* GOAL HEADER */}
+                  <div className="flex flex-col gap-4 border-b border-gray-100 p-6 md:flex-row md:items-center md:justify-between">
 
                     <div>
 
-                      <h2 className="text-lg font-semibold text-gray-900">
-                        {goal.name}
-                      </h2>
+                      <div className="flex items-center gap-3">
 
-                      <p className="mt-1 text-sm text-gray-500">
-                        Target{" "}
-                        {formatFrequency(
-                          goal.frequency
-                        )}
-                      </p>
+                        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gray-100 font-bold text-gray-700">
+                          $
+                        </div>
+
+                        <div>
+                          <h3 className="font-bold text-gray-900">
+                            {goal.name}
+                          </h3>
+
+                          <p className="text-xs text-gray-500">
+                            Deadline{" "}
+                            {formatDate(
+                              goal.deadline
+                            )}
+                          </p>
+                        </div>
+
+                      </div>
 
                     </div>
 
-                    <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-600">
-                      {Math.round(
-                        goal.progress
-                      )}
-                      %
-                    </span>
+                    <button
+                      onClick={() =>
+                        openDepositForm(
+                          goal.id
+                        )
+                      }
+                      className="rounded-xl bg-black px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800"
+                    >
+                      + Tambah Dana
+                    </button>
 
                   </div>
 
-                  {/* AMOUNT */}
+                  {/* GOAL BODY */}
+                  <div className="p-6">
 
-                  <div className="mt-6">
-
-                    <div className="flex items-end justify-between">
+                    <div className="grid gap-6 md:grid-cols-3">
 
                       <div>
-
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs font-medium uppercase tracking-wider text-gray-400">
                           Terkumpul
                         </p>
 
-                        <p className="mt-1 text-xl font-bold text-gray-900">
+                        <p className="mt-1 text-2xl font-bold text-gray-900">
                           {formatRupiah(
                             goal.current_amount
                           )}
                         </p>
-
                       </div>
 
-                      <div className="text-right">
-
-                        <p className="text-xs text-gray-500">
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wider text-gray-400">
                           Target
                         </p>
 
-                        <p className="mt-1 text-sm font-semibold text-gray-700">
+                        <p className="mt-1 text-2xl font-bold text-gray-900">
                           {formatRupiah(
                             goal.target_amount
                           )}
                         </p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wider text-gray-400">
+                          Sisa
+                        </p>
+
+                        <p className="mt-1 text-2xl font-bold text-gray-900">
+                          {formatRupiah(
+                            remaining
+                          )}
+                        </p>
+                      </div>
+
+                    </div>
+
+                    {/* PROGRESS */}
+                    <div className="mt-7">
+
+                      <div className="mb-2 flex items-center justify-between">
+
+                        <span className="text-xs font-medium text-gray-500">
+                          Progress
+                        </span>
+
+                        <span className="text-sm font-bold text-gray-900">
+                          {Number(
+                            goal.progress || 0
+                          ).toFixed(1)}
+                          %
+                        </span>
+
+                      </div>
+
+                      <div className="h-3 overflow-hidden rounded-full bg-gray-100">
+
+                        <div
+                          className="h-full rounded-full bg-black transition-all duration-500"
+                          style={{
+                            width: `${Math.min(
+                              Number(
+                                goal.progress || 0
+                              ),
+                              100
+                            )}%`,
+                          }}
+                        />
 
                       </div>
 
                     </div>
 
-                  </div>
+                    {/* HISTORY */}
+                    <div className="mt-8">
 
-                  {/* PROGRESS */}
-
-                  <div className="mt-5">
-
-                    <div className="h-3 overflow-hidden rounded-full bg-gray-100">
-
-                      <div
-                        className="h-full rounded-full bg-blue-600 transition-all"
-                        style={{
-                          width: `${Math.min(
-                            Math.max(
-                              goal.progress,
-                              0
-                            ),
-                            100
-                          )}%`,
-                        }}
-                      />
-
-                    </div>
-
-                  </div>
-
-                  {/* FOOTER */}
-
-                  <div className="mt-5 flex items-center justify-between border-t border-gray-100 pt-4">
-
-                    <div>
-
-                      <p className="text-xs text-gray-400">
-                        Deadline
-                      </p>
-
-                      <p className="mt-1 text-sm font-medium text-gray-700">
-                        {formatDeadline(
-                          goal.deadline
-                        )}
-                      </p>
-
-                    </div>
-
-                    <div className="text-right">
-
-                      <p className="text-xs text-gray-400">
-                        Frekuensi
-                      </p>
-
-                      <p className="mt-1 text-sm font-medium text-gray-700">
-                        {formatFrequency(
-                          goal.frequency
-                        )}
-                      </p>
-
-                    </div>
-
-                  </div>
-
-                  {/* DEPOSIT BUTTON */}
-
-                  <button
-                    onClick={() =>
-                      openDepositForm(
-                        goal.id
-                      )
-                    }
-                    className="mt-5 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700"
-                  >
-                    + Tambah Dana
-                  </button>
-
-                  {/* DEPOSIT FORM */}
-
-                  {depositGoalId ===
-                    goal.id && (
-                    <div className="mt-5 rounded-xl border border-gray-200 bg-gray-50 p-4">
-
-                      <h3 className="font-semibold text-gray-900">
-                        Tambah Dana
-                      </h3>
-
-                      <form
-                        onSubmit={
-                          handleCreateDeposit
-                        }
-                        className="mt-4 space-y-4"
-                      >
-
-                        {/* ACCOUNT */}
+                      <div className="mb-4 flex items-center justify-between">
 
                         <div>
+                          <h4 className="font-semibold text-gray-900">
+                            Riwayat Dana
+                          </h4>
 
-                          <label className="mb-2 block text-xs font-medium text-gray-600">
-                            Rekening Sumber Dana
-                          </label>
+                          <p className="text-xs text-gray-400">
+                            {goalDeposits.length} transaksi
+                          </p>
+                        </div>
 
-                          <select
-                            value={
-                              depositAccountId
-                            }
-                            onChange={(
-                              event
-                            ) =>
-                              setDepositAccountId(
-                                event.target.value
-                              )
-                            }
-                            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm"
-                          >
+                      </div>
 
-                            <option value="">
-                              Pilih rekening
-                            </option>
+                      {goalDeposits.length === 0 ? (
 
-                            {accounts.map(
-                              (account) => (
-                                <option
+                        <div className="rounded-xl bg-gray-50 px-4 py-8 text-center text-sm text-gray-400">
+                          Belum ada dana yang
+                          ditambahkan.
+                        </div>
+
+                      ) : (
+
+                        <div className="divide-y divide-gray-100 rounded-xl border border-gray-100">
+
+                          {goalDeposits.map(
+                            (deposit) => {
+
+                              const account =
+                                accounts.find(
+                                  (item) =>
+                                    item.id ===
+                                    deposit.account_id
+                                )
+
+                              return (
+                                <div
                                   key={
-                                    account.id
+                                    deposit.id
                                   }
-                                  value={
-                                    account.id
-                                  }
+                                  className="flex flex-col gap-4 p-4 transition hover:bg-gray-50 md:flex-row md:items-center md:justify-between"
                                 >
-                                  {account.name} -{" "}
-                                  {formatRupiah(
-                                    account.balance
-                                  )}
-                                </option>
+
+                                  <div className="flex items-center gap-3">
+
+                                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-100 text-sm font-bold text-gray-700">
+                                      +
+                                    </div>
+
+                                    <div>
+
+                                      <p className="font-semibold text-gray-900">
+                                        Dana
+                                        Tabungan
+                                      </p>
+
+                                      <div className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-gray-400">
+
+                                        <span>
+                                          {account?.name ||
+                                            "Akun tidak ditemukan"}
+                                        </span>
+
+                                        <span>
+                                          •
+                                        </span>
+
+                                        <span>
+                                          {formatDate(
+                                            deposit.created_at
+                                          )}
+                                        </span>
+
+                                      </div>
+
+                                      {deposit.notes && (
+                                        <p className="mt-1 text-xs text-gray-500">
+                                          {
+                                            deposit.notes
+                                          }
+                                        </p>
+                                      )}
+
+                                    </div>
+
+                                  </div>
+
+                                  <div className="flex items-center justify-between gap-4 md:justify-end">
+
+                                    <p className="font-bold text-gray-900">
+                                      +
+                                      {formatRupiah(
+                                        deposit.amount
+                                      )}
+                                    </p>
+
+                                    <div className="flex gap-2">
+
+                                      <button
+                                        onClick={() =>
+                                          openEditDepositForm(
+                                            goal.id,
+                                            deposit
+                                          )
+                                        }
+                                        className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-100"
+                                      >
+                                        Edit
+                                      </button>
+
+                                      <button
+                                        onClick={() =>
+                                          handleDeleteDeposit(
+                                            goal.id,
+                                            deposit.id
+                                          )
+                                        }
+                                        className="rounded-lg border border-red-100 px-3 py-1.5 text-xs font-medium text-red-500 transition hover:bg-red-50"
+                                      >
+                                        Hapus
+                                      </button>
+
+                                    </div>
+
+                                  </div>
+
+                                </div>
                               )
-                            )}
-
-                          </select>
+                            }
+                          )}
 
                         </div>
 
-                        {/* AMOUNT */}
-
-                        <div>
-
-                          <label className="mb-2 block text-xs font-medium text-gray-600">
-                            Nominal
-                          </label>
-
-                          <input
-                            type="number"
-                            min="1"
-                            value={
-                              depositAmount
-                            }
-                            onChange={(
-                              event
-                            ) =>
-                              setDepositAmount(
-                                event.target.value
-                              )
-                            }
-                            placeholder="Contoh: 500000"
-                            className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm"
-                          />
-
-                        </div>
-
-                        {/* NOTES */}
-
-                        <div>
-
-                          <label className="mb-2 block text-xs font-medium text-gray-600">
-                            Catatan
-                          </label>
-
-                          <input
-                            type="text"
-                            value={
-                              depositNotes
-                            }
-                            onChange={(
-                              event
-                            ) =>
-                              setDepositNotes(
-                                event.target.value
-                              )
-                            }
-                            placeholder="Contoh: Tabungan bulan September"
-                            className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm"
-                          />
-
-                        </div>
-
-                        {/* BUTTON */}
-
-                        <div className="flex gap-2">
-
-                          <button
-                            type="button"
-                            onClick={
-                              closeDepositForm
-                            }
-                            className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm font-medium text-gray-700"
-                          >
-                            Batal
-                          </button>
-
-                          <button
-                            type="submit"
-                            disabled={
-                              depositSaving
-                            }
-                            className="flex-1 rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
-                          >
-                            {depositSaving
-                              ? "Menyimpan..."
-                              : "Simpan Dana"}
-                          </button>
-
-                        </div>
-
-                      </form>
+                      )}
 
                     </div>
-                  )}
 
-                </div>
-              ))}
+                  </div>
+
+                </section>
+              )
+            })}
+
+          </div>
+
+        )}
+
+      </main>
+
+      {/* =========================
+          MODAL
+      ========================= */}
+      {modal && (
+
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+
+          <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+
+            {/* MODAL HEADER */}
+            <div className="flex items-center justify-between border-b border-gray-100 px-6 py-5">
+
+              <div>
+
+                <h3 className="text-lg font-bold text-gray-900">
+
+                  {modal === "goal" &&
+                    "Buat Target Baru"}
+
+                  {modal === "deposit" &&
+                    "Tambah Dana"}
+
+                  {modal === "editDeposit" &&
+                    "Edit Dana"}
+
+                </h3>
+
+                <p className="mt-0.5 text-xs text-gray-400">
+                  Lengkapi informasi di bawah.
+                </p>
+
+              </div>
+
+              <button
+                onClick={closeModal}
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-gray-400 transition hover:bg-gray-100 hover:text-gray-900"
+              >
+                ×
+              </button>
 
             </div>
-          )}
 
-      </div>
+            {/* MODAL ERROR */}
+            {error && (
+              <div className="mx-6 mt-5 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+                {error}
+              </div>
+            )}
+
+            {/* =========================
+                GOAL FORM
+            ========================= */}
+            {modal === "goal" && (
+
+              <div className="space-y-5 p-6">
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-gray-700">
+                    Nama Target
+                  </label>
+
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) =>
+                      setName(e.target.value)
+                    }
+                    placeholder="Contoh: Beli Laptop"
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none transition focus:border-black"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-gray-700">
+                    Target Nominal
+                  </label>
+
+                  <input
+                    type="number"
+                    value={targetAmount}
+                    onChange={(e) =>
+                      setTargetAmount(
+                        e.target.value
+                      )
+                    }
+                    placeholder="10000000"
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none transition focus:border-black"
+                  />
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-gray-700">
+                      Deadline
+                    </label>
+
+                    <input
+                      type="date"
+                      value={deadline}
+                      onChange={(e) =>
+                        setDeadline(
+                          e.target.value
+                        )
+                      }
+                      className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-black"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-gray-700">
+                      Frekuensi
+                    </label>
+
+                    <select
+                      value={frequency}
+                      onChange={(e) =>
+                        setFrequency(
+                          e.target.value
+                        )
+                      }
+                      className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-black"
+                    >
+                      <option value="daily">
+                        Harian
+                      </option>
+
+                      <option value="weekly">
+                        Mingguan
+                      </option>
+
+                      <option value="monthly">
+                        Bulanan
+                      </option>
+                    </select>
+                  </div>
+
+                </div>
+
+                <div className="flex gap-3 pt-2">
+
+                  <button
+                    onClick={closeModal}
+                    className="flex-1 rounded-xl border border-gray-200 px-4 py-3 text-sm font-semibold text-gray-600"
+                  >
+                    Batal
+                  </button>
+
+                  <button
+                    onClick={
+                      handleCreateGoal
+                    }
+                    disabled={saving}
+                    className="flex-1 rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                  >
+                    {saving
+                      ? "Menyimpan..."
+                      : "Buat Target"}
+                  </button>
+
+                </div>
+
+              </div>
+            )}
+
+            {/* =========================
+                CREATE DEPOSIT
+            ========================= */}
+            {modal === "deposit" && (
+
+              <div className="space-y-5 p-6">
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-gray-700">
+                    Akun Sumber Dana
+                  </label>
+
+                  <select
+                    value={
+                      depositAccountId
+                    }
+                    onChange={(e) =>
+                      setDepositAccountId(
+                        e.target.value
+                      )
+                    }
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-black"
+                  >
+                    <option value="">
+                      Pilih akun
+                    </option>
+
+                    {accounts.map(
+                      (account) => (
+                        <option
+                          key={
+                            account.id
+                          }
+                          value={
+                            account.id
+                          }
+                        >
+                          {account.name} —{" "}
+                          {formatRupiah(
+                            account.balance
+                          )}
+                        </option>
+                      )
+                    )}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-gray-700">
+                    Nominal
+                  </label>
+
+                  <input
+                    type="number"
+                    value={
+                      depositAmount
+                    }
+                    onChange={(e) =>
+                      setDepositAmount(
+                        e.target.value
+                      )
+                    }
+                    placeholder="500000"
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-black"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-gray-700">
+                    Catatan
+                  </label>
+
+                  <input
+                    type="text"
+                    value={
+                      depositNotes
+                    }
+                    onChange={(e) =>
+                      setDepositNotes(
+                        e.target.value
+                      )
+                    }
+                    placeholder="Tabungan bulan ini"
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-black"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+
+                  <button
+                    onClick={closeModal}
+                    className="flex-1 rounded-xl border border-gray-200 px-4 py-3 text-sm font-semibold text-gray-600"
+                  >
+                    Batal
+                  </button>
+
+                  <button
+                    onClick={
+                      handleCreateDeposit
+                    }
+                    disabled={
+                      depositSaving
+                    }
+                    className="flex-1 rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                  >
+                    {depositSaving
+                      ? "Menyimpan..."
+                      : "Tambah Dana"}
+                  </button>
+
+                </div>
+
+              </div>
+            )}
+
+            {/* =========================
+                EDIT DEPOSIT
+            ========================= */}
+            {modal === "editDeposit" && (
+
+              <div className="space-y-5 p-6">
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-gray-700">
+                    Akun Sumber Dana
+                  </label>
+
+                  <select
+                    value={
+                      editDepositAccountId
+                    }
+                    onChange={(e) =>
+                      setEditDepositAccountId(
+                        e.target.value
+                      )
+                    }
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-black"
+                  >
+                    <option value="">
+                      Pilih akun
+                    </option>
+
+                    {accounts.map(
+                      (account) => (
+                        <option
+                          key={
+                            account.id
+                          }
+                          value={
+                            account.id
+                          }
+                        >
+                          {account.name} —{" "}
+                          {formatRupiah(
+                            account.balance
+                          )}
+                        </option>
+                      )
+                    )}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-gray-700">
+                    Nominal
+                  </label>
+
+                  <input
+                    type="number"
+                    value={
+                      editDepositAmount
+                    }
+                    onChange={(e) =>
+                      setEditDepositAmount(
+                        e.target.value
+                      )
+                    }
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-black"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-gray-700">
+                    Catatan
+                  </label>
+
+                  <input
+                    type="text"
+                    value={
+                      editDepositNotes
+                    }
+                    onChange={(e) =>
+                      setEditDepositNotes(
+                        e.target.value
+                      )
+                    }
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-black"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+
+                  <button
+                    onClick={closeModal}
+                    className="flex-1 rounded-xl border border-gray-200 px-4 py-3 text-sm font-semibold text-gray-600"
+                  >
+                    Batal
+                  </button>
+
+                  <button
+                    onClick={
+                      handleUpdateDeposit
+                    }
+                    disabled={
+                      editDepositSaving
+                    }
+                    className="flex-1 rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                  >
+                    {editDepositSaving
+                      ? "Menyimpan..."
+                      : "Simpan Perubahan"}
+                  </button>
+
+                </div>
+
+              </div>
+            )}
+
+          </div>
+
+        </div>
+      )}
+
     </div>
   )
 }
-
-export default SavingsGoal
