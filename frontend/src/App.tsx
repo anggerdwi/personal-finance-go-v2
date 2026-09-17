@@ -3,6 +3,7 @@ import Login from "./pages/login"
 import Workspace from "./pages/workspace"
 import Dashboard from "./pages/dashboard"
 import Transactions from "./pages/transactions"
+import SavingsGoal from "./pages/savingsGoal"
 
 type WorkspaceData = {
   id: number
@@ -10,16 +11,25 @@ type WorkspaceData = {
   description: string
 }
 
+type Page =
+  | "dashboard"
+  | "transactions"
+  | "savings"
+
 function App() {
-  const [workspaces, setWorkspaces] = useState<WorkspaceData[] | null>(null)
+  const [workspaces, setWorkspaces] =
+    useState<WorkspaceData[] | null>(null)
+
   const [selectedWorkspace, setSelectedWorkspace] =
     useState<WorkspaceData | null>(null)
 
-  const [page, setPage] = useState<"dashboard" | "transactions">(
-    "dashboard"
-  )
+  const [page, setPage] =
+    useState<Page>("dashboard")
 
-  // Belum login
+  // =========================
+  // LOGIN
+  // =========================
+
   if (workspaces === null) {
     return (
       <Login
@@ -30,34 +40,73 @@ function App() {
     )
   }
 
-  // Sudah login, belum memilih workspace
+  // =========================
+  // WORKSPACE
+  // =========================
+
   if (selectedWorkspace === null) {
     return (
       <Workspace
         workspaces={workspaces}
         onSelectWorkspace={(workspace) => {
-          setSelectedWorkspace(workspace)
+          setSelectedWorkspace(
+            workspace
+          )
         }}
       />
     )
   }
 
-  // Sudah memilih workspace
-  // Sudah memilih workspace
+  // =========================
+  // DASHBOARD
+  // =========================
+
   if (page === "dashboard") {
     return (
       <Dashboard
-        workspace={selectedWorkspace}
+        workspace={
+          selectedWorkspace
+        }
+
         onViewAllTransactions={() => {
           setPage("transactions")
+        }}
+
+        onViewSavingsGoals={() => {
+          setPage("savings")
         }}
       />
     )
   }
 
+  // =========================
+  // TRANSACTIONS
+  // =========================
+
+  if (page === "transactions") {
+    return (
+      <Transactions
+        workspace={
+          selectedWorkspace
+        }
+
+        onBack={() => {
+          setPage("dashboard")
+        }}
+      />
+    )
+  }
+
+  // =========================
+  // SAVINGS GOAL
+  // =========================
+
   return (
-    <Transactions
-      workspace={selectedWorkspace}
+    <SavingsGoal
+      workspace={
+        selectedWorkspace
+      }
+
       onBack={() => {
         setPage("dashboard")
       }}

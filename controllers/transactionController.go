@@ -157,8 +157,12 @@ func GetTransaction(c *gin.Context) {
 		return
 	}
 
+	// Filter
 	typeFilter := c.Query("type")
 	minAmount := c.Query("min_amount")
+	search := c.Query("search")
+	categoryID := c.Query("category_id")
+	accountID := c.Query("account_id")
 
 	// Pagination
 	pageStr := c.DefaultQuery("page", "1")
@@ -169,20 +173,56 @@ func GetTransaction(c *gin.Context) {
 
 	offset := (page - 1) * limit
 
+	// Query dasar
 	query := config.DB.Model(&models.Transaction{}).
-		Where("user_id = ? AND workspace_id = ?", UserID, workspaceID)
+		Where(
+			"user_id = ? AND workspace_id = ?",
+			UserID,
+			workspaceID,
+		)
 
-	// Filter by type
+	// Filter berdasarkan type
 	if typeFilter != "" {
-		query = query.Where("type = ?", typeFilter)
+		query = query.Where(
+			"type = ?",
+			typeFilter,
+		)
 	}
 
 	// Filter minimum amount
 	minAmountInt, err := strconv.Atoi(minAmount)
 	if err == nil {
-		query = query.Where("ABS(amount) >= ?", minAmountInt)
+		query = query.Where(
+			"ABS(amount) >= ?",
+			minAmountInt,
+		)
 	}
 
+	// Search berdasarkan catatan transaksi
+	if search != "" {
+		query = query.Where(
+			"notes LIKE ?",
+			"%"+search+"%",
+		)
+	}
+
+	// Filter berdasarkan category
+	if categoryID != "" {
+		query = query.Where(
+			"category_id = ?",
+			categoryID,
+		)
+	}
+
+	// Filter berdasarkan account
+	if accountID != "" {
+		query = query.Where(
+			"account_id = ?",
+			accountID,
+		)
+	}
+
+	// Ambil data transaksi
 	if err := query.
 		Preload("Category").
 		Preload("Account").
@@ -488,32 +528,34 @@ func DeleteTransaction(c *gin.Context) {
 	// Hapus transaksi + kembalikan saldo account
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
 
-		// Cari account yang digunakan transaksi
-		var account models.Account
+		// Hanya kembalikan saldo jika transaksi
+		// memiliki account
+		if transaction.AccountID != 0 {
 
-		if err := tx.
-			Where(
-				"id = ? AND user_id = ? AND workspace_id = ?",
-				transaction.AccountID,
-				UserID,
-				workspaceID,
-			).
-			First(&account).Error; err != nil {
+			var account models.Account
 
-			return err
-		}
+			if err := tx.
+				Where(
+					"id = ? AND user_id = ? AND workspace_id = ?",
+					transaction.AccountID,
+					UserID,
+					workspaceID,
+				).
+				First(&account).Error; err != nil {
 
-		// Kembalikan efek transaksi ke saldo
-		//
-		// Expense disimpan sebagai negatif:
-		// -75.000 → saldo dikembalikan +75.000
-		//
-		// Income disimpan sebagai positif:
-		// +500.000 → saldo dikurangi kembali -500.000
-		account.Balance -= transaction.Amount
+				return err
+			}
 
-		if err := tx.Save(&account).Error; err != nil {
-			return err
+			// Expense disimpan sebagai negatif:
+			// -50.000 → saldo dikembalikan +50.000
+			//
+			// Income disimpan sebagai positif:
+			// +500.000 → saldo dikurangi kembali -500.000
+			account.Balance -= transaction.Amount
+
+			if err := tx.Save(&account).Error; err != nil {
+				return err
+			}
 		}
 
 		// Soft delete transaksi

@@ -7,7 +7,10 @@ type DashboardProps = {
     name: string
     description: string
   }
+
   onViewAllTransactions: () => void
+
+  onViewSavingsGoals: () => void
 }
 
 type DashboardData = {
@@ -27,7 +30,11 @@ type DashboardData = {
   }[]
 }
 
-function Dashboard({ workspace,  onViewAllTransactions }: DashboardProps) {
+function Dashboard({
+  workspace,
+  onViewAllTransactions,
+  onViewSavingsGoals,
+}: DashboardProps) {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
@@ -173,8 +180,15 @@ function Dashboard({ workspace,  onViewAllTransactions }: DashboardProps) {
       onClick={onViewAllTransactions}
       className="text-sm font-medium text-blue-600 hover:text-blue-700"
     >
-      Lihat Semua →
+      Lihat Semua Transaksi
     </button>
+
+    <button
+  onClick={onViewSavingsGoals}
+  className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
+>
+  Target Tabungan
+</button>
   </div>
 
   {/* Transaction List */}
